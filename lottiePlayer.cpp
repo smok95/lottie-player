@@ -26,8 +26,8 @@ int main()
 	size_t h = 468;
 
 	sf::ContextSettings settings;
-	settings.antialiasingLevel = 2;
-	sf::RenderWindow window(sf::VideoMode(w, h), "", sf::Style::None, settings);
+	settings.antialiasingLevel = 16;
+	sf::RenderWindow window(sf::VideoMode(w, h), "", sf::Style::None);// , settings);
 	sf::CircleShape shape(100.f);
 	shape.setFillColor(sf::Color::Green);
 	float thickness = 1.0;
@@ -51,8 +51,10 @@ int main()
 
 	sf::Texture texture;
 	texture.create(w, h);
+	texture.setSmooth(true);
 
 	sf::Sprite sprite(texture);
+	
 
 	
 	size_t frameNo = 0;
