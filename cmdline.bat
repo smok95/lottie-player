@@ -1,0 +1,1 @@
+lottieplayer -w 400 -h 200 -f "c:/temp/9844-loading-40-paperplane.json" -t jktestlottie --bgcolor aaaaaaff
