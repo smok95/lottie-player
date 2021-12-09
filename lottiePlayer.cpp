@@ -31,6 +31,12 @@ void makeWindowTransparent(sf::RenderWindow& window)
 	HWND hwnd = window.getSystemHandle();
 	SetWindowLongPtr(hwnd, GWL_EXSTYLE, GetWindowLongPtr(hwnd, GWL_EXSTYLE) | WS_EX_LAYERED);
 }
+
+void makeWindowToolWindow(sf::RenderWindow& window) {
+	HWND hwnd = window.getSystemHandle();
+	SetWindowLongPtr(hwnd, GWL_EXSTYLE, GetWindowLongPtr(hwnd, GWL_EXSTYLE)| WS_EX_TOOLWINDOW);
+}
+
 void makeWindowOpaque(sf::RenderWindow& window)
 {
 	HWND hwnd = window.getSystemHandle();
@@ -45,19 +51,22 @@ inline void setWindowAlpha(sf::RenderWindow& window, sf::Uint8 alpha = 255)
 int main(int argc, char** argv) {
 	
 	cxxopts::Options options("lottiePlayer", "lottie-player usage");
+	options.allow_unrecognised_options();
 
 	options.add_options()
 		("w,width", "width of the window", cxxopts::value<size_t>()->default_value("800"))
 		("h,height", "height of the window", cxxopts::value<size_t>()->default_value("600"))
-		("f,file", "lottie filename", cxxopts::value<string>())
-		("t,title", "title of window", cxxopts::value<string>())
+		("f,file", "lottie filename", cxxopts::value<string>()->default_value(""))
+		("t,title", "title of window", cxxopts::value<string>()->default_value(""))
 		("bgcolor", "background color (rgba)", cxxopts::value<string>()->default_value("ffffffff"))
+		("s,speed", "speed", cxxopts::value<double>()->default_value("1.0"))
+		("a,alpha", "alpha (0.0 ~ 1.0)", cxxopts::value<double>()->default_value("1.0"))
 		("help", "Print usage")
 		;
 
 	auto cmdline = options.parse(argc, argv);
-
-	if (cmdline.count("help")) {
+	
+	if (cmdline.count("help")) {		
 		cout << options.help() << endl;
 		return 0;
 	}
@@ -67,17 +76,25 @@ int main(int argc, char** argv) {
 	string filename = cmdline["file"].as<string>();
 	string title = cmdline["title"].as<string>();
 	string hex = cmdline["bgcolor"].as<string>();
+	double speed = cmdline["speed"].as<double>();
+	double alpha = cmdline["alpha"].as<double>();
 
 	if (hex.length() < 6 || hex.length() > 8) hex = "ffffffff";
 	else if (hex.length() == 6) hex += "ff";
 
 	uint32_t backColor = (uint32_t)strtoul(hex.c_str(), nullptr, 16);
 
-
 	sf::ContextSettings settings;
 	settings.antialiasingLevel = 16;
 	sf::RenderWindow window(sf::VideoMode(w, h), title, sf::Style::None, settings);
+	makeWindowTransparent(window);
+	makeWindowToolWindow(window);
+
+	setWindowAlpha(window, (sf::Uint8)(255.0 * alpha));
+
 	window.setVerticalSyncEnabled(true);
+
+	
 
 	sf::CircleShape shape(100.f);
 	shape.setFillColor(sf::Color::Green);
@@ -95,8 +112,11 @@ int main(int argc, char** argv) {
 
 	sf::Color backgroundColor(backColor);
 	
-	auto animator = rlottie::Animation::loadFromFile(filename);
+	auto animator = rlottie::Animation::loadFromFile(filename);	
 	auto frameCount = animator->totalFrame();
+
+	double framerate = animator->frameRate() * speed;
+
 
 	const size_t bufferSize = w * h;
 	auto buffer = unique_ptr<uint32_t[]>(new uint32_t[bufferSize]);
@@ -110,13 +130,11 @@ int main(int argc, char** argv) {
 	sf::Sprite sprite(texture);
 
 	HWND hwnd = window.getSystemHandle();
-	makeWindowTransparent(window);
+	
 		
 	size_t frameNo = 0;
 
-	sf::Time interval = sf::milliseconds(35);
-
-	sf::Uint8 alpha = 0;
+	sf::Time interval = sf::microseconds(1000000.0/framerate);
 
 	sf::RenderStates renderstates;
 	
