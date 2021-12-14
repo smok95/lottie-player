@@ -1,8 +1,11 @@
 ﻿#include <SFML/Graphics.hpp>
+#include <windows.h>
 #include "rlottie.h"
 #include "util.hpp"
 #include <objbase.h>
 #include "cxxopts/cxxopts.hpp"
+#include "w32window.hpp"
+#include <tchar.h>
 
 // SFML
 #pragma comment(lib, "winmm")
@@ -12,12 +15,10 @@
 #pragma comment(lib, "sfml-system-s-d")
 #pragma comment(lib, "sfml-graphics-s-d")
 #pragma comment(lib, "sfml-window-s-d")
-#pragma comment(lib, "sfml-main-d")
 #else
 #pragma comment(lib, "sfml-system-s")
 #pragma comment(lib, "sfml-graphics-s")
 #pragma comment(lib, "sfml-window-s")
-#pragma comment(lib, "sfml-main")
 #endif // _DEBUG
 
 
@@ -26,26 +27,17 @@
 
 using namespace std;
 
-void makeWindowTransparent(sf::RenderWindow& window)
-{
-	HWND hwnd = window.getSystemHandle();
-	SetWindowLongPtr(hwnd, GWL_EXSTYLE, GetWindowLongPtr(hwnd, GWL_EXSTYLE) | WS_EX_LAYERED);
-}
+HINSTANCE gInst = nullptr;
 
-void makeWindowToolWindow(sf::RenderWindow& window) {
-	HWND hwnd = window.getSystemHandle();
-	SetWindowLongPtr(hwnd, GWL_EXSTYLE, GetWindowLongPtr(hwnd, GWL_EXSTYLE)| WS_EX_TOOLWINDOW);
-}
+LPCTSTR CLASS_NAME = _T("SFML App");
 
-void makeWindowOpaque(sf::RenderWindow& window)
-{
-	HWND hwnd = window.getSystemHandle();
-	SetWindowLongPtr(hwnd, GWL_EXSTYLE, GetWindowLongPtr(hwnd, GWL_EXSTYLE) & ~WS_EX_LAYERED);
-	RedrawWindow(hwnd, NULL, NULL, RDW_ERASE | RDW_INVALIDATE | RDW_FRAME | RDW_ALLCHILDREN);
-}
-inline void setWindowAlpha(sf::RenderWindow& window, sf::Uint8 alpha = 255)
-{
-	SetLayeredWindowAttributes(window.getSystemHandle(), 0, alpha, LWA_ALPHA);
+int main(int argc, char** argv);
+LRESULT CALLBACK onEvent(HWND handle, UINT message, WPARAM wp, LPARAM lp);
+
+int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_
+	LPSTR lpCmdLine, _In_ int nShowCmd) {
+	gInst = hInstance;
+	return main(__argc, __argv);
 }
 
 int main(int argc, char** argv) {
@@ -61,13 +53,16 @@ int main(int argc, char** argv) {
 		("bgcolor", "background color (rgba)", cxxopts::value<string>()->default_value("ffffffff"))
 		("s,speed", "speed", cxxopts::value<double>()->default_value("1.0"))
 		("a,alpha", "alpha (0.0 ~ 1.0)", cxxopts::value<double>()->default_value("1.0"))
+		("hide", "window hide", cxxopts::value<bool>()->default_value("false"))
+		("timeout", "app close timeout(msec)", cxxopts::value<size_t>()->default_value("0"))
 		("help", "Print usage")
 		;
 
 	auto cmdline = options.parse(argc, argv);
 	
 	if (cmdline.count("help")) {		
-		cout << options.help() << endl;
+		MessageBox(nullptr, options.help().c_str(), "lottie-player", MB_OK | MB_SYSTEMMODAL | MB_TOPMOST);
+		
 		return 0;
 	}
 
@@ -78,26 +73,14 @@ int main(int argc, char** argv) {
 	string hex = cmdline["bgcolor"].as<string>();
 	double speed = cmdline["speed"].as<double>();
 	double alpha = cmdline["alpha"].as<double>();
+	const bool visible = cmdline["hide"].as<bool>()==false;
+	const size_t timeout = cmdline["timeout"].as<size_t>();
 
 	if (hex.length() < 6 || hex.length() > 8) hex = "ffffffff";
 	else if (hex.length() == 6) hex += "ff";
 
 	uint32_t backColor = (uint32_t)strtoul(hex.c_str(), nullptr, 16);
 
-	sf::ContextSettings settings;
-	settings.antialiasingLevel = 16;
-	sf::RenderWindow window(sf::VideoMode(w, h), title, sf::Style::None, settings);
-	makeWindowTransparent(window);
-	makeWindowToolWindow(window);
-
-	setWindowAlpha(window, (sf::Uint8)(255.0 * alpha));
-
-	window.setVerticalSyncEnabled(true);
-
-	
-
-	sf::CircleShape shape(100.f);
-	shape.setFillColor(sf::Color::Green);
 	float thickness = 1.0;
 	sf::Vector2f v2((float)w-thickness*2, (float)h-thickness*2);
 	sf::RectangleShape rectangle(v2);
@@ -128,16 +111,167 @@ int main(int argc, char** argv) {
 	texture.setSmooth(true);
 
 	sf::Sprite sprite(texture);
-
-	HWND hwnd = window.getSystemHandle();
 	
-		
 	size_t frameNo = 0;
 
 	sf::Time interval = sf::microseconds(1000000.0/framerate);
 
 	sf::RenderStates renderstates;
 	
+	// Define a class for our main window
+	WNDCLASS windowClass;
+	windowClass.style = 0;
+	windowClass.lpfnWndProc = &onEvent;
+	windowClass.cbClsExtra = 0;
+	windowClass.cbWndExtra = 0;
+	windowClass.hInstance = gInst;
+	windowClass.hIcon = nullptr;
+	windowClass.hCursor = nullptr;
+	windowClass.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BACKGROUND);
+	windowClass.lpszMenuName = nullptr;
+	windowClass.lpszClassName = CLASS_NAME;
+	RegisterClass(&windowClass);
+
+	POINT pos = { 0, };
+	{
+		// Compute position and size
+		HDC screenDC = GetDC(nullptr);
+		pos.x = (GetDeviceCaps(screenDC, HORZRES) - static_cast<int>(w)) / 2;
+		pos.y = (GetDeviceCaps(screenDC, VERTRES) - static_cast<int>(h)) / 2;
+		ReleaseDC(nullptr, screenDC);
+	}
+
+	DWORD style = WS_POPUP;
+	if (visible) {
+		style |= WS_VISIBLE;
+	}
+	
+	DWORD exStyle = WS_EX_TOOLWINDOW | WS_EX_LAYERED| WS_EX_TOPMOST;
+
+	//w32window::makeWindowTransparent(hwnd);
+	//w32window::makeWindowToolWindow(hwnd);
+	
+	// Let's create the main window
+	HWND hMainWnd = CreateWindowEx(exStyle, CLASS_NAME, title.c_str(), style, 
+		pos.x, pos.y, w, h, nullptr, nullptr, gInst, nullptr);
+
+	w32window::setWindowAlpha(hMainWnd, (BYTE)(255.0 * alpha));
+
+
+	// Let's create two SFML views
+	const DWORD childStyle = WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS;
+	HWND hView = CreateWindow(TEXT("STATIC"), nullptr, childStyle, 0, 0, w, h, 
+		hMainWnd, nullptr, gInst, nullptr);
+	sf::RenderWindow lottieWnd(hView, sf::ContextSettings(32, 0, 8));
+	
+	// Loop until a WM_QUIT message is received
+	MSG msg;
+	msg.message = static_cast<UINT>(~WM_QUIT);
+
+	DWORD start = GetTickCount();
+
+	/*
+	sf::Text text;
+	sf::Font font;
+	if (!font.loadFromFile("C:/Windows/Fonts/malgun.ttf"))
+	{
+		// error...
+	}
+
+	// select the font
+	text.setFont(font); // font is a sf::Font
+
+	// set the string to display
+	text.setString(L"");
+
+	// set the character size
+	text.setCharacterSize(14); // in pixels, not points!
+
+	// set the color
+	text.setFillColor(sf::Color(99,99,99));
+
+	// set the text style
+	//text.setStyle(sf::Text::Bold);
+
+	sf::FloatRect bounds = text.getLocalBounds();
+	text.setPosition(20, 20);
+	//text.setPosition((w-bounds.width)/2, h - (bounds.height + 30) );
+	*/
+	while (msg.message != WM_QUIT) {
+
+		if (timeout > 0) {
+			if (timeout <= (GetTickCount() - start)) {
+				break;
+			}
+		}
+
+		if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
+			// If a message was waiting in the message queue, process it
+			TranslateMessage(&msg);
+			DispatchMessage(&msg);
+		}
+		else {
+			animator->renderSync(frameNo, surface);
+			frameNo++;
+			if (frameNo > frameCount) {
+				frameNo = 0;
+			}
+
+			// argb -> rgba
+			uint32_t* data = buffer.get();
+			for (size_t idx = 0; idx < bufferSize; ++idx) {
+				data[idx] = util::argbToRgba(data[idx]);
+			}
+
+			texture.update((sf::Uint8*)buffer.get());
+
+			lottieWnd.clear(backgroundColor);
+
+			lottieWnd.draw(sprite, renderstates);
+			//lottieWnd.draw(text);
+			lottieWnd.draw(rectangle);
+			
+
+			lottieWnd.display();
+
+
+			sf::sleep(interval);
+		}
+	}
+
+	// Close our SFML views before destroying the underlying window
+	lottieWnd.close();
+
+	// Destroy the main window (all its child controls will be destroyed)
+	DestroyWindow(hMainWnd);
+
+	// Don't forget to unregister the window class
+	UnregisterClass(CLASS_NAME, gInst);
+
+	return EXIT_SUCCESS;
+}
+
+LRESULT CALLBACK onEvent(HWND handle, UINT message, WPARAM wp, LPARAM lp) {
+	switch (message)
+	{
+		// Quit when we close the main window
+	case WM_CLOSE:
+	{
+		PostQuitMessage(0);
+		return 0;
+	}
+	case WM_KEYDOWN: 
+	{
+		if (wp == VK_ESCAPE) {
+			PostQuitMessage(0);
+			return 0;
+		}
+	}break;
+	case WM_LBUTTONDOWN:
+	{
+
+	}break;
+	/*
 	while (window.isOpen())
 	{
 		sf::Event event;
@@ -165,30 +299,9 @@ int main(int argc, char** argv) {
 			}
 		}
 
-		animator->renderSync(frameNo, surface);
-		frameNo++;
-		if (frameNo > frameCount) {
-			frameNo = 0;
-		}
-
-		// argb -> rgba
-		uint32_t* data = buffer.get();
-		for (size_t idx = 0; idx < bufferSize; ++idx) {
-			data[idx] = util::argbToRgba(data[idx]);
-		}
-
-		texture.update((sf::Uint8*)buffer.get());
-		
-		window.clear(backgroundColor);
-		
-		window.draw(sprite, renderstates);
-		window.draw(rectangle);
-
-		window.display();
-
-		sf::sleep(interval);
+		*/
 
 	}
-
-	return 0;
+	
+	return DefWindowProc(handle, message, wp, lp);
 }

@@ -157,6 +157,7 @@
     <ClInclude Include="SFML-2.5.1\include\SFML\Graphics.hpp" />
     <ClInclude Include="targetver.h" />
     <ClInclude Include="util.hpp" />
+    <ClInclude Include="w32window.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="lottiePlayer.cpp" />

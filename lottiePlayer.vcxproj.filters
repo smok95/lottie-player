@@ -36,6 +36,7 @@
     <ClInclude Include="cxxopts\cxxopts.hpp">
       <Filter>cxxopts</Filter>
     </ClInclude>
+    <ClInclude Include="w32window.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="lottiePlayer.rc">
