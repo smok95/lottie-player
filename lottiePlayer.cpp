@@ -30,6 +30,13 @@ using namespace std;
 HINSTANCE gInst = nullptr;
 
 LPCTSTR CLASS_NAME = _T("SFML App");
+#define TIMERID_FADEIN 100
+#define TIMERID_FADEOUT 101
+
+int gFadeInValue = 0;
+int gFadeOutValue = 0xff;
+bool gFadeout = false;
+bool gFadeIn = false;
 
 int main(int argc, char** argv);
 LRESULT CALLBACK onEvent(HWND handle, UINT message, WPARAM wp, LPARAM lp);
@@ -55,6 +62,8 @@ int main(int argc, char** argv) {
 		("a,alpha", "alpha (0.0 ~ 1.0)", cxxopts::value<double>()->default_value("1.0"))
 		("hide", "window hide", cxxopts::value<bool>()->default_value("false"))
 		("timeout", "app close timeout(msec)", cxxopts::value<size_t>()->default_value("0"))
+		("fadein", "fade-in", cxxopts::value<bool>()->default_value("false"))
+		("fadeout", "fade-out", cxxopts::value<bool>()->default_value("false"))
 		("help", "Print usage")
 		;
 
@@ -74,7 +83,12 @@ int main(int argc, char** argv) {
 	double speed = cmdline["speed"].as<double>();
 	double alpha = cmdline["alpha"].as<double>();
 	const bool visible = cmdline["hide"].as<bool>()==false;
-	const size_t timeout = cmdline["timeout"].as<size_t>();
+	size_t timeout = cmdline["timeout"].as<size_t>();
+	const bool fadein = cmdline["fadein"].as<bool>();
+	const bool fadeout = cmdline["fadeout"].as<bool>();
+
+	gFadeout = fadeout;
+	gFadeIn = fadein;
 
 	if (hex.length() < 6 || hex.length() > 8) hex = "ffffffff";
 	else if (hex.length() == 6) hex += "ff";
@@ -155,8 +169,16 @@ int main(int argc, char** argv) {
 	HWND hMainWnd = CreateWindowEx(exStyle, CLASS_NAME, title.c_str(), style, 
 		pos.x, pos.y, w, h, nullptr, nullptr, gInst, nullptr);
 
-	w32window::setWindowAlpha(hMainWnd, (BYTE)(255.0 * alpha));
 
+	if (fadein) {
+		if (visible) {
+			w32window::setWindowAlpha(hMainWnd, 0);
+			SetTimer(hMainWnd, TIMERID_FADEIN, 20, nullptr);
+		}
+	}
+	else {
+		w32window::setWindowAlpha(hMainWnd, (BYTE)(255.0 * alpha));
+	}
 
 	// Let's create two SFML views
 	const DWORD childStyle = WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS;
@@ -201,7 +223,13 @@ int main(int argc, char** argv) {
 
 		if (timeout > 0) {
 			if (timeout <= (GetTickCount() - start)) {
-				break;
+				if (gFadeout) {
+					SetTimer(hMainWnd, TIMERID_FADEOUT, 20, nullptr);
+					timeout = 0;
+				}
+				else {
+					break;
+				}
 			}
 		}
 
@@ -244,7 +272,7 @@ int main(int argc, char** argv) {
 
 	// Destroy the main window (all its child controls will be destroyed)
 	DestroyWindow(hMainWnd);
-
+	
 	// Don't forget to unregister the window class
 	UnregisterClass(CLASS_NAME, gInst);
 
@@ -257,14 +285,59 @@ LRESULT CALLBACK onEvent(HWND handle, UINT message, WPARAM wp, LPARAM lp) {
 		// Quit when we close the main window
 	case WM_CLOSE:
 	{
-		PostQuitMessage(0);
+		if (gFadeout) {
+			SetTimer(handle, TIMERID_FADEOUT, 20, nullptr);
+		}
+		else {
+			PostQuitMessage(0);
+		}
 		return 0;
 	}
 	case WM_KEYDOWN: 
 	{
 		if (wp == VK_ESCAPE) {
-			PostQuitMessage(0);
+			if (gFadeout) {
+				SetTimer(handle, TIMERID_FADEOUT, 20, nullptr);
+			}
+			else {
+				PostQuitMessage(0);
+			}
 			return 0;
+		}
+	}break;
+	case WM_TIMER:
+	{
+		if (wp == TIMERID_FADEIN) {
+			gFadeInValue += 12;
+			if (gFadeInValue > 0xff) {
+				gFadeInValue = 0xff;
+			}
+			w32window::setWindowAlpha(handle, gFadeInValue);
+
+			if (gFadeInValue >= 0xff) {
+				KillTimer(handle, wp);
+				gFadeInValue = 0;
+			}
+		}
+		else if (wp == TIMERID_FADEOUT) {
+			gFadeOutValue -= 12;
+			if (gFadeOutValue < 0) {
+				gFadeOutValue = 0;
+			}
+			w32window::setWindowAlpha(handle, gFadeOutValue);
+
+			if (gFadeOutValue <= 0) {
+				gFadeOutValue = 0xff;
+				KillTimer(handle, wp);
+				PostQuitMessage(0);
+			}
+		}
+	}break;
+	case WM_SHOWWINDOW:
+	{
+		if (wp == TRUE) {
+			w32window::setWindowAlpha(handle, 0);
+			SetTimer(handle, TIMERID_FADEIN, 20, nullptr);
 		}
 	}break;
 	case WM_LBUTTONDOWN:
