@@ -1,0 +1,1 @@
+lottieplayer -w 640 -h 480 -f loading2.json -s 1.0 --timeout 7000 -a 0.99 --fadein --fadeout
