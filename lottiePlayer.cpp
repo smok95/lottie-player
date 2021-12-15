@@ -336,8 +336,10 @@ LRESULT CALLBACK onEvent(HWND handle, UINT message, WPARAM wp, LPARAM lp) {
 	case WM_SHOWWINDOW:
 	{
 		if (wp == TRUE) {
-			w32window::setWindowAlpha(handle, 0);
-			SetTimer(handle, TIMERID_FADEIN, 20, nullptr);
+			if (gFadeIn) {
+				w32window::setWindowAlpha(handle, 0);
+				SetTimer(handle, TIMERID_FADEIN, 20, nullptr);
+			}
 		}
 	}break;
 	case WM_LBUTTONDOWN:
