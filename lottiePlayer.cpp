@@ -50,10 +50,10 @@ public:
 	bool useFadeOut;	// 프로그램 종료시 fade-out 효과 사용
 	size_t timeout;		// msec
 	sf::Color backgroundColor;
-
+	bool redraw;
 	Settings():fadeInValue(0), fadeOutValue(0xff), useFadeIn(false), width(0),
 		height(0), useFadeOut(false), speed(0.0), alpha(1.0), visible(true), 
-		timeout(0) {}
+		timeout(0), redraw(false) {}
 
 	bool initWithCommandline(cxxopts::ParseResult& cmdline);
 
@@ -265,7 +265,7 @@ int main(int argc, char** argv) {
 			}
 			else {
 				// image인 경우
-				if (frameNo < frameCount) {
+				if (frameNo < frameCount || settings_.redraw) {
 					frameNo++;
 					renderWin.clear(settings_.backgroundColor);
 
@@ -273,6 +273,8 @@ int main(int argc, char** argv) {
 					//renderWin.draw(rectangle);
 
 					renderWin.display();
+
+					settings_.redraw = false;
 				}
 				sf::sleep(sf::milliseconds(10));
 			}
@@ -374,6 +376,7 @@ LRESULT CALLBACK onEvent(HWND handle, UINT message, WPARAM wp, LPARAM lp) {
 	{
 		if (wp == TRUE) {
 			if (settings_.useFadeIn) {
+				settings_.redraw = true;
 				w32window::setWindowAlpha(handle, 0);
 				SetTimer(handle, TIMERID_FADEIN, 20, nullptr);
 			}
